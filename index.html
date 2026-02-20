@@ -1,4 +1,109 @@
+<script>
+// ========== نظام تخزين متقدم ==========
 
+// محاولة فتح IndexedDB
+let db;
+const request = indexedDB.open('QR_Rack', 2);
+
+request.onerror = (event) => {
+    console.log('❌ IndexedDB فشل، نستخدم localStorage');
+    // استخدام localStorage كاحتياطي
+    try {
+        items = JSON.parse(localStorage.getItem('qrr-items') || '[]');
+        movements = JSON.parse(localStorage.getItem('qrr-movs') || '[]');
+    } catch(e) {
+        items = [];
+        movements = [];
+    }
+};
+
+request.onsuccess = (event) => {
+    db = event.target.result;
+    console.log('✅ IndexedDB جاهز');
+    loadFromDB();
+};
+
+request.onupgradeneeded = (event) => {
+    const db = event.target.result;
+    if (!db.objectStoreNames.contains('items')) {
+        db.createObjectStore('items', { keyPath: 'id' });
+    }
+    if (!db.objectStoreNames.contains('movements')) {
+        db.createObjectStore('movements', { keyPath: 'id' });
+    }
+    console.log('📦 تم إنشاء جداول قاعدة البيانات');
+};
+
+function loadFromDB() {
+    if (!db) return;
+    
+    // تحميل الأصناف
+    const txItems = db.transaction('items', 'readonly');
+    const storeItems = txItems.objectStore('items');
+    const getItems = storeItems.getAll();
+    
+    getItems.onsuccess = () => {
+        items = getItems.result || [];
+        console.log(`📦 تحميل ${items.length} صنف`);
+        updateStats();
+        renderList();
+    };
+    
+    // تحميل الحركات
+    const txMovs = db.transaction('movements', 'readonly');
+    const storeMovs = txMovs.objectStore('movements');
+    const getMovs = storeMovs.getAll();
+    
+    getMovs.onsuccess = () => {
+        movements = getMovs.result || [];
+        console.log(`📊 تحميل ${movements.length} حركة`);
+        renderMovsScreen();
+    };
+}
+
+// دالة الحفظ المحسنة
+function saveAllToDB() {
+    if (!db) {
+        // احتياطي: localStorage
+        localStorage.setItem('qrr-items', JSON.stringify(items));
+        localStorage.setItem('qrr-movs', JSON.stringify(movements));
+        return;
+    }
+    
+    // حفظ الأصناف
+    const txItems = db.transaction('items', 'readwrite');
+    const storeItems = txItems.objectStore('items');
+    storeItems.clear();
+    items.forEach(item => storeItems.add(item));
+    
+    // حفظ الحركات
+    const txMovs = db.transaction('movements', 'readwrite');
+    const storeMovs = txMovs.objectStore('movements');
+    storeMovs.clear();
+    movements.forEach(mov => storeMovs.add(mov));
+    
+    console.log('💾 تم حفظ كل البيانات في', new Date().toLocaleTimeString());
+}
+
+// استبدال دوال saveItems و saveMov
+function saveItems() { saveAllToDB(); updateStats(); }
+function saveMov() { saveAllToDB(); }
+
+// حفظ عند الخروج من الصفحة
+window.addEventListener('beforeunload', () => {
+    saveAllToDB();
+});
+
+// حفظ عندما يغادر المستخدم التطبيق
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+        saveAllToDB();
+    }
+});
+
+// حفظ كل 5 دقائق احتياطياً
+setInterval(saveAllToDB, 300000);
+</script>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
